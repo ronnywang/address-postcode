@@ -13,6 +13,7 @@ fclose($fp);
 $fp = fopen('postcode.csv', 'r');
 $output_roads = fopen('data/road.csv', 'w');
 $roads = array();
+$unit_map = array('巷' => 'LANE', '弄' => 'ALLEY', '號' => 'NUMBER');
 while ($rows = fgetcsv($fp)) {
     list($postcode, $county, $town, $road, $address) = $rows;
     if (!$area_id = $areas[$county . $town]) {
@@ -32,8 +33,8 @@ while ($rows = fgetcsv($fp)) {
         $road = str_replace($big_num, $num, $road);
     }
     $rules = array();
-    if (preg_match('#^(.*)([0-9]+段)$#', $road, $matches)) {
-        $rules[] = $matches[2];
+    if (preg_match('#^(.*)([0-9]+)段$#', $road, $matches)) {
+        $rules[] = '=SECTION:' . $matches[2];
         $road = $matches[1];
     }
 
@@ -60,30 +61,35 @@ while ($rows = fgetcsv($fp)) {
         } elseif (in_array($term, array('雙全', '雙'))) {
             $rules[] = 'even';
         } elseif ($term == '連') {
-        } elseif (preg_match('#^([0-9]+樓)以下$#', $term, $matches)) {
-            $rules[] = '<' . $matches[1];
-        } elseif (preg_match('#^([0-9]+樓)以上$#', $term, $matches)) {
-            $rules[] = '>' . $matches[1];
-        } elseif (preg_match('#^([0-9]+(之[0-9]+)?[號巷弄])以下$#u', $term, $matches)) {
-            $rules[] = '<' . $matches[1];
-        } elseif (preg_match('#^([0-9]+(之[0-9]+)?[號巷弄])以上$#u', $term, $matches)) {
-            $rules[] = '>' . $matches[1];
-        } elseif (preg_match('#^([0-9]+(之[0-9]+)?號)$#', $term, $matches)) {
-            $rules[] = '=' . $matches[1];
-        } elseif (preg_match('#^([0-9]+[巷弄])全?連?$#u', $term, $matches)) {
-            $rules[] = $matches[1];
-        } elseif (preg_match('#^([0-9]+[巷弄])雙全?$#u', $term, $matches)) {
+        } elseif (preg_match('#^([0-9]+)樓以下$#', $term, $matches)) {
+            $rules[] = '<FLOOR:' . $matches[1];
+        } elseif (preg_match('#^([0-9]+)樓以上$#', $term, $matches)) {
+            $rules[] = '>FLOOR:' . $matches[1];
+        } elseif (preg_match('#^([0-9]+(之[0-9]+)?)([號巷弄])以下$#u', $term, $matches)) {
+            $rules[] = '<' . $unit_map[$matches[3]] . ':' . $matches[1];
+        } elseif (preg_match('#^([0-9]+(之[0-9]+)?)([號巷弄])以上$#u', $term, $matches)) {
+            $rules[] = '>' . $unit_map[$matches[3]] . ':' . $matches[1];
+        } elseif (preg_match('#^([0-9]+(之[0-9]+)?)號$#', $term, $matches)) {
+            $rules[] = '=NUMBER:' . $matches[1];
+        } elseif (preg_match('#^([0-9]+)([巷弄])全?連?$#u', $term, $matches)) {
+            $rules[] = '=' . $unit_map[$matches[2]] . ':' . $matches[1];
+        } elseif (preg_match('#^([0-9]+)([巷弄])雙全?$#u', $term, $matches)) {
             $rules[] = 'even';
-            $rules[] = $matches[1];
+            $rules[] = '=' . $unit_map[$matches[2]] . ':' . $matches[1];
         } elseif (preg_match('#^([0-9]+[巷弄])單全?$#u', $term, $matches)) {
             $rules[] = 'odd';
-            $rules[] = $matches[1];
-        } elseif (preg_match('#^([0-9]+(之[0-9]+)?[巷弄號])至([0-9]*(之[0-9]+)?[巷弄號])$#u', $term, $matches)) {
-            $rules[] = $matches[1] . '~' . $matches[3];
+            $rules[] = '=' . $unit_map[$matches[2]] . ':' . $matches[1];
+        } elseif (preg_match('#^([0-9]+(之[0-9]+)?)([巷弄號])至([0-9]*(之[0-9]+)?)([巷弄號])$#u', $term, $matches)) {
+            if ($matches[3] != $matches[6]) {
+                $unit = ($matches[3] == '號') ? $matches[6] : $matches[3];
+                $rules[] = '~' . $unit_map[$unit] . ':' . $matches[1] . ':' . $matches[4];
+            } else {
+                $rules[] = '~' . $unit_map[$matches[3]] . ':' . $matches[1] . ':' . $matches[4];
+            }
         } elseif (preg_match('#^([0-9]+)之([0-9]+)至之([0-9]+)號#', $term, $matches)) {
-            $rules[] = "{$matches[1]}之{$matches[2]}號~{$matches[1]}之{$matches[3]}號";
+            $rules[] = "~NUMBER:{$matches[1]}之{$matches[2]}:{$matches[1]}之{$matches[3]}";
         } elseif (preg_match('#^([0-9]+)至([0-9]+)樓$#', $term, $matches)) {
-            $rules[] = $matches[1] . '樓~' . $matches[3] . '樓';
+            $rules[] = "~FLOOR:{$matches[1]}:{$matches[3]}";
         } elseif (strpos($term, '附號')) {
             // TODO
         } else {
